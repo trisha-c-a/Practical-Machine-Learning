@@ -1,0 +1,159 @@
+---
+title: "Practical_Machine_Learning"
+author: "Trisha"
+date: "24/10/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##Code
+
+First install any missing R packages. Load required R packages and set a seed.
+
+```{r packages}
+library(lattice)
+library(ggplot2)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(corrplot)
+library(rattle)
+library(randomForest)
+library(RColorBrewer)
+
+set.seed(222)
+```
+Load data for training and test datasets.
+```{r load data}
+url_train <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+url_quiz  <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+data_train <- read.csv(url(url_train), strip.white = TRUE, na.strings = c("NA",""))
+data_quiz  <- read.csv(url(url_quiz),  strip.white = TRUE, na.strings = c("NA",""))
+
+dim(data_train)
+
+dim(data_quiz)
+```
+Create two partitions (75% and 25%) within the original training dataset.
+```{r partition}
+in_train  <- createDataPartition(data_train$classe, p=0.75, list=FALSE)
+train_set <- data_train[ in_train, ]
+test_set  <- data_train[-in_train, ]
+
+dim(train_set)
+
+dim(test_set)
+```
+The two datasets (train_set and test_set) have a large number of NA values as well as near-zero-variance (NZV) variables. Both will be removed together with their ID variables.
+```{r remove NA}
+nzv_var <- nearZeroVar(train_set)
+
+train_set <- train_set[ , -nzv_var]
+test_set  <- test_set [ , -nzv_var]
+
+dim(train_set)
+
+dim(test_set)
+```
+Remove variables that are mostly NA. A threshlod of 95 % is selected.
+```{r threshold}
+na_var <- sapply(train_set, function(x) mean(is.na(x))) > 0.95
+train_set <- train_set[ , na_var == FALSE]
+test_set  <- test_set [ , na_var == FALSE]
+
+dim(train_set)
+
+dim(test_set)
+```
+Since columns 1 to 5 are identification variables only, they will be removed as well.
+```{r data}
+train_set <- train_set[ , -(1:5)]
+test_set  <- test_set [ , -(1:5)]
+```
+
+```{r train}
+dim(train_set)
+```
+
+```{r test}
+dim(test_set)
+```
+##Correlation Analysis
+
+Correlation analysis between the variables before the modeling work itself is done. The “FPC” is used as the first principal component order.
+```{r correlation}
+corr_matrix <- cor(train_set[ , -54])
+corrplot(corr_matrix, order = "FPC", method = "circle", type = "lower",
+         tl.cex = 0.6, tl.col = rgb(0, 0, 0))
+```
+##Prediction Models
+
+###Decision Tree Model
+```{r decision tree}
+set.seed(2222)
+fit_decision_tree <- rpart(classe ~ ., data = train_set, method="class")
+fancyRpartPlot(fit_decision_tree)
+```
+Predictions of the decision tree model on test_set.
+```{r predict decision tree}
+predict_decision_tree <- predict(fit_decision_tree, newdata = test_set, type="class")
+conf_matrix_decision_tree <- confusionMatrix(predict_decision_tree, factor(test_set$classe))
+conf_matrix_decision_tree
+```
+The predictive accuracy of the decision tree model is relatively low at 75.2 %.
+
+Plot the predictive accuracy of the decision tree model.
+```{r plot confusion matrix}
+plot(conf_matrix_decision_tree$table, col = conf_matrix_decision_tree$byClass, 
+     main = paste("Decision Tree Model: Predictive Accuracy =",
+                  round(conf_matrix_decision_tree$overall['Accuracy'], 4)))
+```
+###Generalized Boosted Model (GBM)
+```{r train Generalized Boosted Model}
+set.seed(2222)
+ctrl_GBM <- trainControl(method = "repeatedcv", number = 5, repeats = 2)
+fit_GBM  <- train(classe ~ ., data = train_set, method = "gbm",
+                  trControl = ctrl_GBM, verbose = FALSE)
+fit_GBM$finalModel
+```
+Predictions of the GBM on test_set.
+```{r predict Generalized Boosted Model}
+predict_GBM <- predict(fit_GBM, newdata = test_set)
+conf_matrix_GBM <- confusionMatrix(predict_GBM, factor(test_set$classe))
+conf_matrix_GBM
+```
+The predictive accuracy of the GBM is relatively high at 98.57 %.
+
+###Random Forest Model
+```{r train random forest}
+set.seed(2222)
+ctrl_RF <- trainControl(method = "repeatedcv", number = 5, repeats = 2)
+fit_RF  <- train(classe ~ ., data = train_set, method = "rf",
+                 trControl = ctrl_RF, verbose = FALSE)
+fit_RF$finalModel
+```
+Predictions of the random forest model on test_set.
+```{r predict random forest}
+predict_RF <- predict(fit_RF, newdata = test_set)
+conf_matrix_RF <- confusionMatrix(predict_RF, factor(test_set$classe))
+conf_matrix_RF
+```
+The predictive accuracy of the Random Forest model is excellent at 99.8 %.
+
+##Applying the Best Predictive Model to the Test Data
+
+The following are the predictive accuracy of the three models:
+
+Decision Tree Model: 75.20 %
+Generalized Boosted Model: 98.57 %
+Random Forest Model: 99.80 %
+The Random Forest model is selected and applied to make predictions on the 20 data points from the original testing dataset (data_quiz).
+```{r output}
+predict_quiz <- as.data.frame(predict(fit_RF, newdata = data_quiz))
+predict_quiz
+```
+
